@@ -45,7 +45,7 @@ module Travis
       end
 
       def connections
-        self.class.connections
+        @connections ||= []
       end
 
       def register_connection(connection)

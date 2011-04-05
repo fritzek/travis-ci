@@ -1,7 +1,7 @@
 Travis.Models.Build = Travis.Models.Base.extend({
   initialize: function(attributes, options) {
     Travis.Models.Base.prototype.initialize.apply(this, arguments);
-    _.bindAll(this, 'set', 'url', 'commit', 'color', 'duration', 'eta', 'toJSON');
+    _.bindAll(this, 'update', 'updateMatrix', 'url', 'commit', 'color', 'duration', 'eta', 'toJSON');
     _.extend(this, options);
 
     this.repository = this.repository;
@@ -9,14 +9,30 @@ Travis.Models.Build = Travis.Models.Base.extend({
     if(!this.repository && Travis.app) this.repository = Travis.app.repositories.get(this.get('repository_id'));
 
     if(this.attributes.matrix) {
-      this.matrix = new Travis.Collections.Builds(this.attributes.matrix, { repository: this.repository });
-      this.matrix.each(function(build) { build.repository = this.repository }.bind(this)); // wtf
-      delete this.attributes.matrix;
+      this.updateMatrix(this.attributes);
+      this.trigger('expanded', this);
     }
-
     if(this.collection) {
       this.bind('change', function(build) { this.collection.trigger('change', this); });
+      this.bind('expanded', function(build) { this.collection.trigger('expanded', build); });
     }
+  },
+  update: function(attributes) {
+    this.set(attributes);
+    if(attributes.matrix) {
+      this.updateMatrix(attributes);
+      this.trigger('expanded', this);
+    }
+    return this;
+  },
+  updateMatrix: function(attributes) {
+    if(this.matrix) {
+      _.each(attributes.matrix, function(attributes) { this.matrix.update(attributes) }.bind(this));
+    } else {
+      this.matrix = new Travis.Collections.Builds(attributes.matrix, { repository: this.repository });
+      this.matrix.each(function(build) { build.repository = this.repository }.bind(this)); // wtf
+    }
+    delete attributes.matrix;
   },
   parent: function(callback) {
     if(this.get('parent_id')) this.collection.getOrFetch(this.get('parent_id'), callback);
@@ -72,13 +88,13 @@ Travis.Collections.Builds = Travis.Collections.Base.extend({
   model: Travis.Models.Build,
   initialize: function(models, options) {
     Travis.Collections.Base.prototype.initialize.apply(this, arguments);
-    _.bindAll(this, 'url', 'dimensions', 'set');
+    _.bindAll(this, 'url', 'dimensions', 'update');
     _.extend(this, options);
   },
-  set: function(attributes) {
+  update: function(attributes) {
     if(attributes) {
       var build = this.get(attributes.id);
-      build ? build.set(attributes) : this.add(new Travis.Models.Build(attributes, { repository: this.repository }));
+      build ? build.update(attributes) : this.add(new Travis.Models.Build(attributes, { repository: this.repository }));
     }
   },
   url: function() {

@@ -31,6 +31,7 @@ Travis.Controllers.Application = Backbone.Controller.extend({
 
     this.bind('build:started',  this.buildStarted);
     this.bind('build:finished', this.buildFinished);
+    this.bind('build:expanded', this.buildExpanded);
     this.bind('build:log',      this.buildLogged);
     this.bind('build:queued',   this.buildQueued);
 
@@ -97,16 +98,19 @@ Travis.Controllers.Application = Backbone.Controller.extend({
     this.jobs.add({ number: data.build.number, id: data.build.id, repository: { slug: data.slug } });
   },
   buildStarted: function(data) {
-    this.repositories.set(data);
-    this.jobs.remove({ id: data.build.id });
+    this.repositories.update(data);
+    this.jobs.remove({ id: data.build.matrix ? data.build.matrix[0].id : data.build.id });
     if((this.followBuilds || this.tab == 'current' && this.repositories.selected().get('slug') == data.slug) && !this.buildId && !data.build.parent_id) {
       var repository = this.repositories.get(data.id);
       if(!repository.selected) repository.select();
       repository.builds.select(data.build.id);
     }
   },
+  buildExpanded: function(data) {
+    this.repositories.update(data);
+  },
   buildFinished: function(data) {
-    this.repositories.set(data);
+    this.repositories.update(data);
   },
   buildLogged: function(data) {
     var repository = this.repositories.get(data.id);

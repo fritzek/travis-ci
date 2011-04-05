@@ -7,6 +7,10 @@ var Travis = {
     Travis.app.run();
   },
   trigger: function(event, data) {
+    data = _.clone(data)
+    if(data.build.parent_id) {
+      data.build = { id: data.build.parent_id, matrix: [_.clone(data.build)] };
+    }
     var repository = _.extend(data.repository, { build: _.clone(data.build) });
     _.each(['id', 'number', 'status', 'started_at', 'finished_at'], function(key) {
       if(_.key(data.build, key)) repository['last_build_' + key] = data.build[key];
@@ -63,4 +67,23 @@ if(!Function.prototype.bind) {
 // [1]: http://stackoverflow.com/questions/1013637/unexpected-caching-of-ajax-results-in-ie8
 $.ajaxSetup({ cache: false });
 
-
+// jQuery(document).ready(function($){
+//   $.each($('.post.link.github h3 a'), function() {
+//     var post = $(this).parents(".post");
+//     var url = $(this).attr('href');
+//     var segments = url.split('/');
+//     var repo = segments.pop();
+//     var username = segments.pop();
+//     $.getJSON("http://github.com/api/v2/json/repos/show/"+username+"/"+repo+"?callback=?", function(data){
+//       var repo_data = data.repository;
+//       if(repo_data) {
+//         var watchers_link = $('<a>').addClass('watchers').attr('href', url+'/watchers').text(repo_data.watchers);
+//         var forks_link = $('<a>').addClass('forks').attr('href', url+'/network').text(repo_data.forks);
+//         var comment_link = post.find('.meta .comment-count');
+//         comment_link.after(watchers_link);
+//         comment_link.after(forks_link);
+//       }
+//     });
+//   });
+// });
+//

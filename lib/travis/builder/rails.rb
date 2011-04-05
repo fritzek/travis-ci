@@ -4,9 +4,20 @@ require 'uri'
 module Travis
   class Builder
     module Rails
+      class Queue < Array
+        def shift
+          sort! { |lft, rgt| lft[0] <=> rgt[0] }
+          yield(first) unless empty?
+          super
+        end
+      end
+
+      attr_reader :messages
+
       def work!
-        @done = []
+        @messages = Queue.new
         @msg_id = 0
+        send_messages!
         super
       end
 
@@ -27,6 +38,7 @@ module Travis
 
       def on_finish
         super
+        sleep(Stdout::BUFFER_TIME) # ugh ... make sure this is the last message
         post('finished_at' => Time.now, 'status' => result, 'log' => log)
      end
 
@@ -36,18 +48,45 @@ module Travis
         end
 
         def post(data)
-          host = rails_config['url'] || 'http://127.0.0.1'
-          url  = "#{host}/builds/#{build['id']}#{'/log' if data.delete('append')}"
-          uri  = URI.parse(host)
-          data = { :body => { '_method' => 'put', 'build' => data, 'msg_id' => msg_id }, :head => { :authorization => [uri.user, uri.password] } }
-          # stdout.puts "-- post to #{url} : #{data.inspect}"
-          register_connection EventMachine::HttpRequest.new(url).post(data)
+          path = "/builds/#{build['id']}"
+          path += '/log' if data.delete('append')
+          data = { '_method' => 'put', 'build' => data, 'msg_id' => msg_id }
+          stdout.puts "\n----> message ##{data['msg_id']} to #{path}: #{data.inspect[0..80]}"
+          messages << [data['msg_id'], path, data]
         rescue Exception => e
-          stdout.puts e.inspect
+          # stdout.puts e.inspect
+        end
+
+        def send_messages!
+          EM.add_timer(0.1) do
+            messages.shift do |message|
+              msg_id, path, body = *message
+              stdout.puts "\n<----    post ##{msg_id} to #{path}: #{body.inspect[0..80]}"
+              request = http(path).post(:body => body, :head => { 'authorization' => auth })
+              register_connection(request)
+            end
+            send_messages!
+          end
+        end
+
+        def http(path)
+          EventMachine::HttpRequest.new([host, path].join('/'))
+        end
+
+        def host
+          @host ||= rails_config['url'] || 'http://127.0.0.1'
+        end
+
+        def uri
+          @uri ||= URI.parse(host)
+        end
+
+        def auth
+          @auth ||= [uri.user, uri.password]
         end
 
         def rails_config
-          @rails_config ||= Travis.config['rails']
+          @rails_config ||= Travis.config['rails'] || {}
         end
     end
   end

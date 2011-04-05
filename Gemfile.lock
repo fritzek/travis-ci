@@ -239,6 +239,7 @@ DEPENDENCIES
   cucumber-rails!
   database_cleaner
   devise (~> 1.2.rc)
+  em-http-request
   em-websocket (~> 0.2.0)
   factory_girl_rails!
   fakeweb

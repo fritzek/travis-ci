@@ -1,11 +1,15 @@
 var EVENT_PAYLOADS = {
-  'build:queued':     { repository: { id: 1, slug: 'svenfuchs/minimal'   }, build: { id: 10, number: 4,  } },
+  'build:queued:1':   { repository: { id: 1, slug: 'svenfuchs/minimal'   }, build: { id: 10, number: 4,  } },
+  'build:queued:2':   { repository: { id: 1, slug: 'svenfuchs/minimal'   }, build: { id: 4, number: '4.1' } },
   'build:started:1':  { repository: { id: 2, slug: 'josevalim/enginex'   }, build: { id: 10, number: 2, started_at: '2010-11-12T17:00:00Z', commit: '1111111', committer_name: 'Jose Valim', message: 'enginex commit', log: 'the enginex build 2 log ... ' } },
   'build:started:2':  { repository: { id: 3, slug: 'travis-ci/travis-ci' }, build: { id: 11, number: 1, started_at: '2010-11-12T17:00:00Z', commit: '2222222', committer_name: 'Sven Fuchs', message: 'minimal commit', log: 'the travis-ci build 1 log ... ' } },
+  'build:started:3':  { repository: { id: 1 }, build: { id: 4, parent_id: 3 } },
+  'build:expanded':   { repository: { id: 3 }, build: { id: 11, config: { rvm: ['1.8.7', '1.9.2'] }, matrix: [ { id: 12, number: '4.1', config: { rvm: '1.8.7' } }, { id: 13, number: '4.2', config: { rvm: '1.9.2' } } ] } },
   'build:log:1':      { repository: { id: 2 }, build: { id: 10, }, log: 'with appended chars' },
+  'build:log:3':      { repository: { id: 1 }, build: { id: 4,  parent_id: 3 }, log: 'something' },
   'build:finished:1': { repository: { id: 2 }, build: { id: 10, status: 0, finished_at: '2010-11-12T17:00:10Z' } },
   'build:finished:2': { repository: { id: 1 }, build: { id: 3,  status: 0, finished_at: '2010-11-12T17:00:10Z' } },
-  'build:finished:3': { repository: { id: 1 }, build: { id: 4,  status: 0, finished_at: '2010-11-12T17:00:00Z' } },
+  'build:finished:3': { repository: { id: 1 }, build: { id: 4,  status: 0, finished_at: '2010-11-12T17:00:00Z',  parent_id: 3 } },
 }
 
 describe('Events:', function() {
@@ -26,7 +30,7 @@ describe('Events:', function() {
     beforeEach(function() {
       goTo('/');
       waitsFor(repositoriesListPopulated());
-      trigger('build:queued', EVENT_PAYLOADS['build:queued']);
+      trigger('build:queued', EVENT_PAYLOADS['build:queued:1']);
     });
 
     it('prepends to the jobs list view', function() {
@@ -41,12 +45,12 @@ describe('Events:', function() {
         waitsFor(repositoriesFetched());
         runs(function() { Travis.app.repositories.get(2).builds.fetch(); }); // required so we can assert the new build was added, because the fixtures don't contain it
 
-        trigger('build:queued', EVENT_PAYLOADS['build:queued']);
+        trigger('build:queued', EVENT_PAYLOADS['build:queued:1']);
         trigger('build:started', EVENT_PAYLOADS['build:started:1']);
       });
 
       it('removes the job from the jobs list view', function() {
-        expect($('#jobs li.job_10').length).toBe(0);
+        expect($('#jobs #job_10').length).toBe(0);
       });
 
       it('updates the repository list entry and moves it to the top of the list', function() {
@@ -84,6 +88,37 @@ describe('Events:', function() {
 
       it('updates the build summary of the "current" build tab', function() {
         expect($('#tab_current')).toShowBuildSummary({ build: 1, commit: '2222222', committer: 'Sven Fuchs', finished_at: '-', duration: '30 sec' });
+      });
+    });
+
+     describe('build:started for a matrix child build', function() {
+      beforeEach(function() {
+        goTo('/');
+        waitsFor(repositoriesListPopulated());
+        trigger('build:queued', EVENT_PAYLOADS['build:queued:2']);
+        runs(function() { expect($('#jobs #job_4').length).toEqual(1) })
+        trigger('build:started', EVENT_PAYLOADS['build:started:3']);
+      });
+
+      it('removes the job from the jobs list view', function() {
+        expect($('#jobs #job_4').length).toEqual(0);
+      });
+    });
+
+    describe('build:expanded for the same repository', function() {
+      beforeEach(function() {
+        goTo('/');
+        waitsFor(repositoriesListPopulated());
+        trigger('build:started', EVENT_PAYLOADS['build:started:2']);
+        trigger('build:expanded', EVENT_PAYLOADS['build:expanded']);
+      });
+
+      it('updates the repository view to show the build matrix', function() {
+        expect('#tab_current #matrix').toMatchTable([
+          ['Build', 'Rvm'  ],
+          ['4.1',   '1.8.7'],
+        ]);
+        expect($('#tab_current #matrix tbody tr:first-child').hasClass('green')).toBeFalsy();
       });
     });
 
@@ -269,13 +304,24 @@ describe('Events:', function() {
       });
     });
 
-    describe('for the same repository and (matrix) build', function() {
+    describe('for the same repository and (matrix) parent build', function() {
       beforeEach(function() {
         goTo('/svenfuchs/minimal/builds/3');
         waitsFor(repositoriesFetched());
       });
 
-      describe('build:finished for the matrix build', function() {
+      describe('build:log for the child build', function() {
+        beforeEach(function() {
+          trigger('build:started', EVENT_PAYLOADS['build:log:3']);
+        });
+
+        it('does not remove the sibling builds from the matrix table', function() {
+          expect(Travis.app.repositories.get(1).builds.get(3).matrix.length).toEqual(4)
+          expect($('#tab_build #matrix tbody tr').length).toEqual(4);
+        });
+      });
+
+      describe('build:finished for the matrix parent build', function() {
         beforeEach(function() {
           trigger('build:finished', EVENT_PAYLOADS['build:finished:2']);
         });
@@ -287,18 +333,19 @@ describe('Events:', function() {
 
       describe('build:finished for a matrix child build', function() {
         beforeEach(function() {
-          /* console.log(Travis.app.repositories.get(1).builds.pluck('commit')) */
           trigger('build:finished', EVENT_PAYLOADS['build:finished:3']);
         });
 
-        // FIXME this fails because instead of updating the (nested) child build's status, it adds the child build to the builds collection
-        xit('updates the matrix table row', function() {
-          /* console.log(Travis.app.repositories.get(1).builds.pluck('commit')) */
+        it('updates the matrix table row', function() {
           expect('#tab_build #matrix').toMatchTable([
             ['Build', 'Gemfile',                  'Rvm'  ],
             ['3.1',   'test/Gemfile.rails-2.3.x', '1.8.7'],
+            ['3.2',   'test/Gemfile.rails-3.0.x', '1.8.7'],
+            ['3.3',   'test/Gemfile.rails-2.3.x', '1.9.2'],
+            ['3.4',   'test/Gemfile.rails-3.0.x', '1.9.2'],
           ]);
-          expect($('#tab_build #matrix tbody tr:first-child').hasClass('green')).toBeTruthy();
+          expect($('#tab_build #matrix tbody tr:nth-child(1)').hasClass('green')).toBeTruthy();
+          expect($('#tab_build #matrix tbody tr:nth-child(2)').hasClass('green')).toBeFalsy();
         })
       });
     });
@@ -372,3 +419,4 @@ describe('Events:', function() {
     });
   });
 });
+
